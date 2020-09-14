@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<style type="text/css">
+    h2{
+        width: 70%;height: 50vh;margin:  0 auto;
+        box-shadow: 0 0 3px 4px #0099cc;
+        word-break: break-all;
+    }
+    .red{
+        color: #f00;
+    }
+    .blue{
+        color: #09f;
+    }
+    span,pre{
+      white-space: pre-line;
+    }
+</style>
+<body>
+    <h2></h2>
+</body>
+<script src="./socket.io-client.js"></script>
+<script type="text/javascript">
+    // browser
+    const server = "ws://127.0.0.1:7080";
+    const log = console.log;
+
+    function buffer2String(buffer){
+        return new Promise((reslove, reject)=>{
+            var b = new Blob([buffer]);
+            var r = new FileReader();
+            r.readAsText(b, 'utf-8');
+            r.onload = () =>{
+               // resolve(r.result);
+               try{
+                 reslove(JSON.parse(r.result));
+               }catch(e){
+                 reslove(r.result);
+               }
+            }
+        })
+    }
+
+    function str2Buffer(string) {
+        return new Promise((resolve, reject)=>{
+            var b = new Blob([string],{type:'text/plain'});
+            var r = new FileReader();
+            r.readAsArrayBuffer(b);
+            r.onload = () => {
+                resolve(r.result);
+            }
+        })
+
+    }
+
+    let paramQuery = (action, content) => {
+        /*return {
+            data: {
+                action,
+                content
+            }
+        }*/
+        return {
+            action,
+            content
+        }
+    }
+
+    window.onload = function() {
+      // init
+      const socket = io(server);
+
+      socket.on('connect', () => {
+        const id = socket.id;
+
+        log('#connect,', id, socket);
+        // 监听自身 id 以实现 p2p 通讯
+        socket.on(id, msg => {
+          log('#receive,', msg);
+        });
+        socket.emit('file-operate',{action: 'readlist', params:""})
+      });
+
+      // 接收在线用户信息
+      socket.on('online', msg => {
+        log('#online,', msg);
+      });
+
+      // 系统事件
+      socket.on('disconnect', msg => {
+        log('#disconnect', msg);
+      });
+
+      socket.on('disconnecting', () => {
+        log('#disconnecting');
+      });
+
+      socket.on('error', () => {
+        log('#error');
+      });
+
+      // socket.on('file-operate', (data) => {
+      socket.on('readlist', (data) => {
+        buffer2String(data).then(res=>{
+            log('#msg', res);
+            let content = res.data.content;
+            if(content.err){
+                document.querySelectorAll('h2')[0].innerHTML += ('<span class="red">'+JSON.stringify(content.err).replace(/\r|\n/gi,'<br>')+'</span><br/>');
+            }else{
+                document.querySelectorAll('h2')[0].innerHTML += ('<span class="blue">'+JSON.stringify(content).replace(/\r|\n/gi,'<br>')+'</span><br/>');
+            }
+
+            setTimeout(()=>{
+               let msg = paramQuery('readlist', res.data.content[0].path);
+               if(res.data.content[0].isDir){
+                 socket.emit('file-operate', msg)
+               }else{
+                 socket.emit('file-operate', paramQuery('execcommand', res.data.content[0].path))
+                 // console.log('error===', res.data.content[0]);
+               }
+
+            }, 3000)
+            // socket.emmit
+        })
+      });
+
+
+      socket.on('execcommand', (data) => {
+        buffer2String(data).then(res=>{
+            log('#msg', res);
+            let content = res.data.content;
+            if(content.err){
+                document.querySelectorAll('h2')[0].innerHTML += ('<span class="red">'+JSON.stringify(content.err).replace(/\r|\n/gi,'<br>')+'</span><br>');
+            }else{
+                let str = JSON.stringify(content);
+                console.log('mm===', str, str.match(/\\r|\\n/g), str.replace(/\\r|\\n/,'<br>'));
+                document.querySelectorAll('h2')[0].innerHTML += ('<span class="blue">'+str.replace(/\\r|\\n/gi,'<br>').replace(/^"|"$/gi,'')+'</span>');
+            }
+            // socket.emmit
+        })
+      })
+      window.socket = socket;
+    };
+</script>
+</html>
