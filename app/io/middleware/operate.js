@@ -8,12 +8,24 @@ const compressing = require('compressing');
 class pythonOperate {
     constructor(){
         this.homedir = path.resolve(os.homedir(), "./documents/mindplus-py");
+        this.initHomeDir();
     }
 
     initHomeDir() {
-        child_process.exec(`mkdir ${this.homedir}`, (err,res)=>{
-            if(err){
-                this.errlog(err);
+        fs.exists(this.homedir, (error, data)=>{
+            if(error){
+                this.errlog(error);
+                return;
+            }
+            console.log('is exists===', data);
+            if(data){
+                console.log('home dir is exists');
+            }else{
+                child_process.exec(`mkdir ${this.homedir}`, (err,res)=>{
+                    if(err){
+                        this.errlog(err);
+                    }
+                })
             }
         })
     }
@@ -39,6 +51,7 @@ class pythonOperate {
                 }
                 let dirs = [];
                 let count = 0;
+                if(!res.length){resolve([]);return;}
                 for(let i in res){
                     let _path = path.join(path_inner, res[i]);
                     fs.stat(_path, (err, status)=>{
@@ -47,11 +60,14 @@ class pythonOperate {
                             this.errlog(_path, err);
                         }else{
                             let item = {
-                                name: res[i],
+                                title: res[i],
+                                key: count,
                                 path: this.transferPath(_path),
                                 isFile: status.isFile(),
+                                isLeaf: status.isFile(),
                                 isDir: status.isDirectory()
                             };
+                            if(status.isDirectory()) item["children"] = [];
                             dirs.push(item);
                         }
 
@@ -68,8 +84,34 @@ class pythonOperate {
 
     }
 
-    async createFile (path, name){
+    async createDir (path_inner, name){
+        path_inner = path_inner?this.parsePath(path_inner) : this.homedir;
+        // console.log("path_inner name===", path_inner, name);
+        // return this.executeCommand(`cd ${path_inner} && mkdir ${name}`)
+        return new Promise((resolve, reject)=>{
+            fs.mkdir(path.resolve(path_inner, name), (error, data)=>{
+                if(error){
+                    this.errlog(error);
+                    resolve({error: error});
+                    return;
+                }
+                resolve(data);
+            })
+        })
+    }
 
+    async createFile (path_inner, name){
+        path_inner = path_inner?this.parsePath(path_inner) : this.homedir;
+        return new Promise((resolve, reject)=>{
+            fs.writeFile(path.resolve(path_inner, name), '', (err, res)=>{
+                if(err){
+                    this.errlog(err);
+                    reject(err);
+                }else{
+                    resolve(res);
+                }
+            })
+        })
     }
 
     async writeFile (path, buffer){
@@ -110,9 +152,34 @@ class pythonOperate {
         return this.executeCommand(`explorer.exe /select, ${path}`);
     }
 
-    async executeCommand(command, ctx, message) {
+    async executePyCommand(command, ctx, message) {
         return new Promise((resolve, reject)=>{
-            /*child_process.exec(this.parsePath(command), (err,res)=>{
+            let client = ctx.socket.id;
+            let { target, content } = message;
+            // let spawn_py = child_process.spawn('py', [this.parsePath(command)]);
+            let spawn_py = child_process.spawn(command);
+            spawn_py.stdout.on('data', function (data) {
+                console.log('stdout: ' + data);
+                let msg = ctx.helper.parseMsg(message.action, data.toString(), {client, target});
+                ctx.socket.emit(client, new Buffer(JSON.stringify(msg)));
+            });
+
+            spawn_py.stderr.on('data', function (data) {
+                console.log('stderr: ' + data);
+                let msg = ctx.helper.parseMsg(message.action, data.toString(), {client, target});
+                ctx.socket.emit(client, new Buffer(JSON.stringify(msg)));
+            });
+
+            spawn_py.on('close', function (code) {
+                console.log('子进程已退出，退出码 '+code);
+            });
+        })
+    }
+
+    async executeCommand(command, ctx, message) {
+        console.log('command===', command);
+        return new Promise((resolve, reject)=>{
+            child_process.exec(this.parsePath(command), (err,res)=>{
                 if(err){
                     // this.errlog(err);
                     resolve({err:err});
@@ -122,26 +189,7 @@ class pythonOperate {
                     resolve(res);
                     // console.log('dd==', res);
                 }
-            })*/
-
-            let client = ctx.socket.id;
-            let { target, content } = message;
-            let spawn_py = child_process.spawn('py', [this.parsePath(command)]);
-            spawn_py.stdout.on('data', function (data) {
-                console.log('stdout: ' + data);
-                let msg = ctx.helper.parseMsg(message.action, data.toString(), {client, target});
-                ctx.socket.emit(message.action, new Buffer(JSON.stringify(msg)));
-            });
-
-            spawn_py.stderr.on('data', function (data) {
-                console.log('stderr: ' + data);
-                let msg = ctx.helper.parseMsg(message.action, data.toString(), {client, target});
-                ctx.socket.emit(message.action, new Buffer(JSON.stringify(msg)));
-            });
-
-            spawn_py.on('close', function (code) {
-                console.log('子进程已退出，退出码 '+code);
-            });
+            })
         })
     }
 
@@ -151,9 +199,9 @@ class pythonOperate {
         let name = dir.pop();
         dir = dir.join('\\');
         if(path.match(/.py$/)){
-            return this.executeCommand(`C: && cd ${dir} && py "${name}"`);
+            return this.executePyCommand(`C: && cd ${dir} && py "${name}"`);
         }else{
-            return this.executeCommand(`C: && cd ${dir} && "${name}"`);
+            return this.executePyCommand(`C: && cd ${dir} && "${name}"`);
         }
     }
 
@@ -193,6 +241,10 @@ class pythonOperate {
          .catch(err => {
             console.error(err);
          });
+    }
+
+    changePIPSource(){
+
     }
 }
 
